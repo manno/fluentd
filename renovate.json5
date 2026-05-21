@@ -1,0 +1,84 @@
+{
+  $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: [
+    "config:recommended",
+    ":semanticCommits",
+    ":dependencyDashboard",
+  ],
+
+  // Target our rancher-main branch
+  baseBranches: ["rancher-main"],
+
+  prConcurrentLimit: 5,
+  prHourlyLimit: 2,
+
+  schedule: ["before 6am every weekday", "every weekend"],
+
+  vulnerabilityAlerts: {
+    enabled: true,
+    labels: ["security", "vulnerability"],
+    automerge: true,
+    automergeType: "branch",
+    schedule: ["at any time"],
+  },
+
+  // Override upstream's intentional disable of v1.16-4.10/* — we WANT Renovate
+  // to manage gems for the version our chart ships.
+  // v1.17-5.0/* stays disabled — it's not consumed by rancher-logging 4.10.
+  packageRules: [
+    // Re-enable v1.16-4.10/* for the bundler manager
+    {
+      matchFileNames: ["v1.16-4.10/**/Gemfile", "v1.16-4.10/**/Gemfile.lock"],
+      enabled: true,
+    },
+
+    // Keep v1.17-5.0/* disabled (not our concern)
+    {
+      matchFileNames: ["v1.17-5.0/**"],
+      enabled: false,
+    },
+
+    // Auto-merge patch updates to gems
+    {
+      matchManagers: ["bundler"],
+      matchUpdateTypes: ["patch"],
+      automerge: true,
+      automergeType: "branch",
+      labels: ["dependencies", "ruby", "patch"],
+    },
+
+    // Group minor gem updates into one weekly PR (require review)
+    {
+      matchManagers: ["bundler"],
+      matchUpdateTypes: ["minor"],
+      automerge: false,
+      groupName: "gem-minor-updates",
+      schedule: ["before 6am on monday"],
+      labels: ["dependencies", "ruby", "minor"],
+    },
+
+    // Never auto-merge major gem updates
+    {
+      matchManagers: ["bundler"],
+      matchUpdateTypes: ["major"],
+      automerge: false,
+      labels: ["dependencies", "ruby", "major"],
+    },
+
+    // GitHub Actions updates — auto-merge patches and minors
+    {
+      matchManagers: ["github-actions"],
+      matchUpdateTypes: ["patch", "minor"],
+      automerge: true,
+      automergeType: "branch",
+      labels: ["ci", "github-actions"],
+    },
+  ],
+
+  commitMessagePrefix: "chore(deps):",
+  commitMessageAction: "update",
+
+  labels: ["dependencies", "automated"],
+
+  rebaseWhen: "behind-base-branch",
+}
