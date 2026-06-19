@@ -1,6 +1,6 @@
 # SUSE BCI variant of v1.16-4.10/Dockerfile.
 #
-# Replaces the Sumologic Alpine base with registry.suse.com/bci/bci-ruby.
+# Replaces the Sumologic Alpine base with registry.suse.com/bci/ruby.
 # Built in parallel to the Alpine Dockerfile via .github/workflows/artifacts-suse.yaml
 # and pushed as :v1.16-4.10-{base,filters,full}-suse tags on rancher-main.
 #
@@ -9,7 +9,7 @@
 # if not, rdkafka (an output dep) will fail to build and we will need to
 # vendor librdkafka from source in the `full` stage.
 
-FROM registry.suse.com/bci/bci-ruby:3.3 AS base
+FROM registry.suse.com/bci/ruby:3.4 AS base
 
 ARG BUILD_DEPS=" \
       gcc gcc-c++ make automake autoconf libtool \

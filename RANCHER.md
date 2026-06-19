@@ -12,7 +12,7 @@ automation — it's maintained by upstream but unused by Rancher 4.10.
 
 ## Status: SUSE migration in progress
 
-The migration to `registry.suse.com/bci/bci-ruby:3.3` is now underway on
+The migration to `registry.suse.com/bci/ruby:3.4` is now underway on
 branch `bci-ruby-migration`. The Alpine + Sumologic pipeline stays live
 during the transition; the SUSE pipeline runs in parallel:
 
@@ -28,7 +28,7 @@ becomes the single pipeline.
 ### Why this took until now
 
 - Current Alpine base brought pre-built gem bundles → ~5–10 min builds.
-- bci-ruby:3.3 means `bundle install` from scratch for 40+ gems with native
+- bci/ruby:3.4 means `bundle install` from scratch for 40+ gems with native
   extensions (rdkafka, oj, snappy, libmaxminddb, …). Expect ~30–45 min
   build cycles and iteration to get every native gem compiling against
   the SUSE library set.
