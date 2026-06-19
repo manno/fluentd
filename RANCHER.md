@@ -10,22 +10,34 @@ the version consumed by the `rancher-logging` 4.10 chart.
 in `ob-team-charts`). The `v1.17-5.0/` directory is left untouched by our
 automation — it's maintained by upstream but unused by Rancher 4.10.
 
-## Status: SUSE migration deferred
+## Status: SUSE migration in progress
 
-**This fork currently stays on the upstream Alpine + Sumologic base image.**
-The migration to `bci-ruby:3.3` (SUSE Base Container Image) is deferred:
+The migration to `registry.suse.com/bci/bci-ruby:3.3` is now underway on
+branch `bci-ruby-migration`. The Alpine + Sumologic pipeline stays live
+during the transition; the SUSE pipeline runs in parallel:
 
-- Current base: `public.ecr.aws/sumologic/kubernetes-fluentd:1.16.5-sumo-0-alpine` + `ruby:3.2.5-alpine3.20`
-- The Sumo image brings pre-built gem bundles, making builds fast (~5-10 min)
-- Switching to bci-ruby:3.3 means full `bundle install` from scratch — 40+ gems with native extensions (rdkafka, oj, snappy, geoip-c). Build time grows to ~30-45 min and there's trial-and-error compiling against zypper packages.
+| Track | Dockerfile | Workflow | Tags pushed |
+|---|---|---|---|
+| Alpine + Sumo (current prod) | `v1.16-4.10/Dockerfile` | `.github/workflows/artifacts.yaml` | `v1.16-4.10-{base,filters,full}` |
+| SUSE BCI (in migration) | `v1.16-4.10/Dockerfile.suse` | `.github/workflows/artifacts-suse.yaml` | `v1.16-4.10-{base,filters,full}-suse` |
 
-**Supply-chain trade-off**: we depend on Sumo's public ECR image. They rebuild
-it on their own cadence. If we need a security fix Sumo hasn't shipped, we
-have to bump it ourselves (manual — see `cve-response.md` strategy `sumo-bump`)
-or migrate to bci-ruby.
+Once the SUSE images pass the smoke test against a real chart deploy and a
+full release cycle, the Alpine track will be removed and `artifacts-suse.yaml`
+becomes the single pipeline.
 
-This decision is documented in `docs/logging/fork/STATE.md` in `ob-team-charts`
-and is the largest remaining risk in our supply-chain hardening story.
+### Why this took until now
+
+- Current Alpine base brought pre-built gem bundles → ~5–10 min builds.
+- bci-ruby:3.3 means `bundle install` from scratch for 40+ gems with native
+  extensions (rdkafka, oj, snappy, libmaxminddb, …). Expect ~30–45 min
+  build cycles and iteration to get every native gem compiling against
+  the SUSE library set.
+- Largest unknown: `librdkafka-devel` availability in the BCI repos. If it
+  isn't shipped, the `full` stage's `rdkafka` gem will fail and we'll need
+  to vendor librdkafka from source.
+
+Strategy `sumo-bump` in `cve-response.md` remains available as a fallback
+while the migration stabilizes.
 
 ## Automation layer
 
@@ -40,9 +52,15 @@ and is the largest remaining risk in our supply-chain hardening story.
 ## Why no auto-update-go / auto-update-bci / auto-update-ruby / goreleaser
 
 - **No Go**: Ruby project.
-- **No BCI**: deferred (see above) — we're on Alpine.
-- **No auto-update-ruby**: Ruby patch bumps in the base FROM line carry ABI risk for the pre-built gem bundle from Sumo. Manual bump only.
-- **No auto-update-sumo**: Sumo's release cadence is opaque; auto-bumping their tag changes the bundled gems too — high risk. Manual bump only (handled by `cve-response.md` `sumo-bump` strategy when needed).
+- **No auto-update-bci** *(yet)*: will be added once `Dockerfile.suse` is the
+  canonical Dockerfile and the Alpine track is retired. Same shape as the
+  other forks' `auto-update-bci.yaml`.
+- **No auto-update-ruby**: Ruby patch bumps in the base FROM line carry ABI
+  risk against compiled native gems. Manual bump only.
+- **No auto-update-sumo**: Sumo's release cadence is opaque; auto-bumping
+  their tag changes the bundled gems too — high risk. Manual bump only via
+  `cve-response.md` `sumo-bump` strategy. Goes away once the SUSE
+  migration lands.
 - **No goreleaser**: build runs entirely in Docker via Bundler.
 
 ## Renovate override

@@ -1,0 +1,122 @@
+# SUSE BCI variant of v1.16-4.10/Dockerfile.
+#
+# Replaces the Sumologic Alpine base with registry.suse.com/bci/bci-ruby.
+# Built in parallel to the Alpine Dockerfile via .github/workflows/artifacts-suse.yaml
+# and pushed as :v1.16-4.10-{base,filters,full}-suse tags on rancher-main.
+#
+# Status: initial migration, expect CI iteration on native-extension gems.
+# The main unknown is whether librdkafka-devel is available in the BCI repos;
+# if not, rdkafka (an output dep) will fail to build and we will need to
+# vendor librdkafka from source in the `full` stage.
+
+FROM registry.suse.com/bci/bci-ruby:3.3 AS base
+
+ARG BUILD_DEPS=" \
+      gcc gcc-c++ make automake autoconf libtool \
+      git tar gzip wget \
+      libopenssl-devel zlib-devel \
+      snappy-devel libmaxminddb-devel \
+      librdkafka-devel \
+      "
+
+ARG RUNTIME_DEPS=" \
+      ca-certificates tini \
+      libopenssl3 snappy libmaxminddb0 librdkafka1 \
+      "
+
+RUN groupadd -g 101 -r fluent \
+ && useradd -u 100 -r -g fluent -d /fluentd -s /sbin/nologin fluent \
+ && mkdir -p /fluentd/log /fluentd/etc /fluentd/plugins /buffers \
+ && chown -R fluent:fluent /fluentd /buffers
+
+RUN zypper -n refresh \
+ && zypper -n install --no-recommends $RUNTIME_DEPS \
+ && zypper -n install --no-recommends $BUILD_DEPS \
+ && echo 'gem: --no-document' >> /etc/gemrc \
+ # Core fluentd + plugins previously supplied by Sumo's pre-built bundle.
+ # Versions track what the Sumo 1.16.5-sumo-0-alpine image shipped, so the
+ # rancher-logging operator's generated config keeps matching plugin APIs.
+ && gem install bundler:2.5.6 \
+ && gem install \
+      bigdecimal:1.4.4 \
+      oj:3.16.1 \
+      google-protobuf:3.25.5 \
+      nio4r:2.7.3 \
+      snappy:0.3.0 \
+      webrick:1.8.2 \
+      fluentd:1.16.5 \
+      fluent-plugin-prometheus:2.2.1 \
+      fluent-plugin-kubernetes_metadata_filter:3.4.0 \
+      fluent-plugin-rewrite-tag-filter:2.4.0 \
+      fluent-plugin-record-modifier:2.2.0 \
+      fluent-plugin-concat:2.5.0 \
+      fluent-plugin-detect-exceptions:0.0.16 \
+      fluent-plugin-multi-format-parser:1.1.0 \
+      fluent-plugin-grok-parser:2.6.2 \
+      fluent-plugin-systemd:1.0.5 \
+      specific_install:0.3.8 \
+ # kubeclient install upgrades the one from the gem bundle
+ && fluent-gem specific_install -l https://github.com/ManageIQ/kubeclient.git --ref 054bff2c5e31a555004be2b3c4d32fb9dc5e6a0f \
+ && fluent-gem specific_install -l https://github.com/kube-logging/fluent-plugin-label-router.git --ref namespace-label \
+ && chown -R fluent:fluent /usr/local/bundle 2>/dev/null || true \
+ && zypper -n remove -u $BUILD_DEPS \
+ && zypper clean -a \
+ && rm -rf /usr/local/bundle/cache/* 2>/dev/null || true \
+ && find /usr/local/bundle -name '*.o' -delete 2>/dev/null || true
+
+COPY fluent.conf /fluentd/etc/
+COPY entrypoint.sh /bin/
+COPY healthy.sh /bin/
+
+ENV FLUENTD_CONF="fluent.conf"
+ENV LD_PRELOAD=""
+EXPOSE 24224 5140
+
+USER fluent
+
+ENTRYPOINT ["tini", "--", "/bin/entrypoint.sh"]
+CMD ["fluentd"]
+
+### Image with all the filters
+FROM base AS filters
+
+ADD ./filters/Gemfile /Gemfile.filters
+ADD ./filters/Gemfile.lock /Gemfile.filters.lock
+
+USER root
+
+ENV BUNDLE_WITHOUT="output,test,development"
+
+RUN zypper -n install --no-recommends $BUILD_DEPS \
+ && touch /etc/gemrc \
+ && fluent-gem install --file Gemfile.filters \
+ && chown -R fluent:fluent /usr/local/bundle 2>/dev/null || true \
+ && zypper -n remove -u $BUILD_DEPS \
+ && zypper clean -a \
+ && rm -rf /usr/local/bundle/cache/* 2>/dev/null || true \
+ && find /usr/local/bundle -name '*.o' -delete 2>/dev/null || true
+
+USER fluent
+
+### Image with all the filters and outputs
+FROM filters AS full
+
+ADD ./outputs/Gemfile /Gemfile.outputs
+ADD ./outputs/Gemfile.lock /Gemfile.outputs.lock
+
+USER root
+
+RUN zypper -n install --no-recommends $BUILD_DEPS \
+ && touch /etc/gemrc \
+ # Upstream patches not yet released — keep the same forks as the Alpine image
+ && fluent-gem specific_install -l https://github.com/kube-logging/fluent-plugin-gcs.git --ref ad6a7cb0f166e2c1648954a928e1e9b8cdcbf93d \
+ && fluent-gem specific_install -l https://github.com/kube-logging/fluent-plugin-syslog_rfc5424.git --ref 4ab9f7df3757b0e31e4bc209acab05a518efdce3 \
+ && fluent-gem specific_install -l https://github.com/kube-logging/fluent-plugin-elasticsearch.git --ref f711c4322e37852a83caab0385ba4567031eb9ab \
+ && fluent-gem install --file /Gemfile.outputs \
+ && chown -R fluent:fluent /usr/local/bundle 2>/dev/null || true \
+ && zypper -n remove -u $BUILD_DEPS \
+ && zypper clean -a \
+ && rm -rf /usr/local/bundle/cache/* 2>/dev/null || true \
+ && find /usr/local/bundle -name '*.o' -delete 2>/dev/null || true
+
+USER fluent
