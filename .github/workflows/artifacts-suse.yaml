@@ -1,0 +1,88 @@
+name: Artifacts (SUSE)
+
+# Parallel build pipeline for the bci-ruby variant of v1.16-4.10.
+# Runs alongside artifacts.yaml so the existing Alpine pipeline keeps
+# producing :v1.16-4.10-{base,filters,full} unchanged. This workflow
+# pushes :v1.16-4.10-{base,filters,full}-suse tags.
+#
+# Once the SUSE image is validated end-to-end (smoke test + a real release
+# cycle), this workflow replaces artifacts.yaml and the Alpine Dockerfile
+# can be removed.
+
+on:
+  push:
+    branches:
+      - rancher-main
+      - bci-ruby-migration   # iterate here during the migration
+  pull_request:
+    paths:
+      - 'v1.16-4.10/Dockerfile.suse'
+      - 'v1.16-4.10/filters/**'
+      - 'v1.16-4.10/outputs/**'
+      - '.github/workflows/artifacts-suse.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  container-images:
+    name: SUSE container images
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        fluentd:
+          - version: v1.16-4.10
+        image-type:
+          - base
+          - filters
+          - full
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Gather metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ghcr.io/${{ github.repository_owner }}/fluentd
+          flavor: |
+            latest = false
+          tags: |
+            type=raw,value=${{ matrix.fluentd.version }}-${{ matrix.image-type }}-suse
+            type=raw,value=${{ matrix.fluentd.version }}-${{ matrix.image-type }}-suse-build.${{ github.run_number }}
+            type=sha,prefix=${{ matrix.fluentd.version }}-${{ matrix.image-type }}-suse-,format=short
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: all
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ github.token }}
+        if: github.event_name == 'push'
+
+      - name: Build and push (${{ matrix.image-type }})
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.fluentd.version }}
+          file: ${{ matrix.fluentd.version }}/Dockerfile.suse
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha,scope=suse-${{ matrix.image-type }}
+          cache-to: type=gha,mode=max,scope=suse-${{ matrix.image-type }}
+          push: ${{ github.event_name == 'push' }}
+          tags: |
+            ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          target: ${{ matrix.image-type }}
