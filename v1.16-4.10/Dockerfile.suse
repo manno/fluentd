@@ -55,6 +55,25 @@ RUN set -eux \
  && ruby --version \
  && gem --version
 
+# Vendor MaxMind's legacy libGeoIP from source — required by the geoip-c
+# gem that fluent-plugin-geoip pulls in. The library was retired by
+# MaxMind in 2018 (superseded by libmaxminddb) and is not in any SUSE
+# repo. The 1.6.12 release is the last and is what Alpine's geoip-dev
+# package wraps. Build is ~15s, adds <2 MB to the image. ldconfig picks
+# up /usr/local/lib via /etc/ld.so.conf.d/usrlocal.conf (already shipped
+# by bci-base via glibc).
+RUN set -eux \
+ && cd /tmp \
+ && curl -fsSL -o geoip.tar.gz https://github.com/maxmind/geoip-api-c/releases/download/v1.6.12/GeoIP-1.6.12.tar.gz \
+ && tar xf geoip.tar.gz \
+ && cd GeoIP-1.6.12 \
+ && ./configure --prefix=/usr/local --disable-static \
+ && make -j"$(nproc)" \
+ && make install \
+ && echo /usr/local/lib > /etc/ld.so.conf.d/usrlocal.conf \
+ && ldconfig \
+ && cd / && rm -rf /tmp/GeoIP-1.6.12 /tmp/geoip.tar.gz
+
 RUN set -eux \
  && groupadd -g 101 -r fluent \
  && useradd -u 100 -r -g fluent -d /fluentd -s /sbin/nologin fluent \
