@@ -15,8 +15,12 @@
 #   - librdkafka / librdkafka-devel  → rdkafka gem (output plugin) will fail.
 #     Plan: vendor librdkafka from source in the `full` stage.
 #   - snappy / snappy-devel          → snappy gem skipped from `base` for now.
-#   - libmaxminddb / -devel          → fluent-plugin-geoip will fail.
-#     Plan: vendor libmaxminddb in `filters` stage (or drop geoip).
+#   - libmaxminddb / -devel          → geoip2_c gem vendors its own copy,
+#     bootstrapped via autoreconf at gem-install time. No system package
+#     needed; just autoconf/automake/libtool/gawk in the toolchain.
+#   - libGeoIP (legacy, not libmaxminddb) → required by `geoip-c` gem that
+#     fluent-plugin-geoip depends on. Retired by MaxMind in 2018, not in
+#     SLE_BCI. Vendored from source in the base stage (see below).
 #   - tini                           → not in BCI; using dumb-init from gem
 #     (`gem install dumb-init` ships a Ruby-launched init replacement) is not
 #     suitable, so we exec entrypoint.sh directly with `exec` and accept that
@@ -46,7 +50,7 @@ RUN set -eux \
         ruby${RUBY_PKG_VERSION}-devel \
         ca-certificates ca-certificates-mozilla \
         libopenssl-3-devel zlib-devel libyaml-devel \
-        gcc gcc-c++ make tar gzip git curl patch \
+        gcc gcc-c++ make tar gzip xz git curl patch \
         automake autoconf libtool gawk \
  && zypper clean -a \
  && ln -sf $(command -v ruby.ruby${RUBY_PKG_VERSION} 2>/dev/null || command -v ruby) /usr/local/bin/ruby \
