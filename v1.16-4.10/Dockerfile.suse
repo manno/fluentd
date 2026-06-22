@@ -67,6 +67,9 @@ RUN set -eux \
 RUN set -eux \
  && echo 'gem: --no-document' >> /etc/gemrc \
  && gem install bundler:2.5.6 \
+ # Diagnostic: surface where gem actually installs things, so future failures
+ # don't require re-running CI to find out.
+ && gem env \
  && gem install \
         bigdecimal:1.4.4 \
         oj:3.16.1 \
@@ -84,11 +87,29 @@ RUN set -eux \
         fluent-plugin-grok-parser:2.6.2 \
         fluent-plugin-systemd:1.0.5 \
         specific_install:0.3.8 \
+ # Locate fluent-gem regardless of where rubygems decided to install
+ # binstubs (GEM_HOME ENV doesn't always win against compiled-in defaults
+ # on SUSE-packaged ruby). Symlink it into /usr/local/bin so subsequent
+ # `fluent-gem` invocations resolve via PATH.
+ && FLUENT_GEM=$(find / -name 'fluent-gem' -type f -executable 2>/dev/null | grep -v '/proc/' | head -1) \
+ && echo "Found fluent-gem at: ${FLUENT_GEM:-NOT FOUND}" \
+ && [ -n "$FLUENT_GEM" ] \
+ && ln -sf "$FLUENT_GEM" /usr/local/bin/fluent-gem \
+ && fluent-gem --version \
+ # Same trick for the bundle dir — discover the real GEM_HOME and symlink
+ # /usr/local/bundle to it so the rest of the Dockerfile's hard-coded path
+ # assumptions keep working.
+ && REAL_GEM_DIR=$(gem env gemdir) \
+ && echo "Real gem dir: $REAL_GEM_DIR" \
+ && if [ "$REAL_GEM_DIR" != "/usr/local/bundle" ]; then \
+        rm -rf /usr/local/bundle ; \
+        ln -sf "$REAL_GEM_DIR" /usr/local/bundle ; \
+    fi \
  && fluent-gem specific_install -l https://github.com/ManageIQ/kubeclient.git --ref 054bff2c5e31a555004be2b3c4d32fb9dc5e6a0f \
  && fluent-gem specific_install -l https://github.com/kube-logging/fluent-plugin-label-router.git --ref namespace-label \
- && chown -R fluent:fluent /usr/local/bundle 2>/dev/null || true \
- && rm -rf /usr/local/bundle/cache/* \
- && find /usr/local/bundle -name '*.o' -delete
+ && chown -R fluent:fluent /usr/local/bundle/ 2>/dev/null || true \
+ && rm -rf /usr/local/bundle/cache/* 2>/dev/null || true \
+ && find -L /usr/local/bundle -name '*.o' -delete 2>/dev/null || true
 
 COPY fluent.conf /fluentd/etc/
 COPY entrypoint.sh /bin/
