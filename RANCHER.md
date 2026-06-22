@@ -10,34 +10,62 @@ the version consumed by the `rancher-logging` 4.10 chart.
 in `ob-team-charts`). The `v1.17-5.0/` directory is left untouched by our
 automation — it's maintained by upstream but unused by Rancher 4.10.
 
-## Status: SUSE migration in progress
+## Status: SUSE migration — pipeline green, awaiting smoke test
 
-The migration to `registry.suse.com/bci/ruby:3.4` is now underway on
-branch `bci-ruby-migration`. The Alpine + Sumologic pipeline stays live
-during the transition; the SUSE pipeline runs in parallel:
+All three SUSE images now build and push successfully on branch
+`bci-ruby-migration` (PR [#6](https://github.com/manno/fluentd/pull/6)):
+
+| Stage   | Build time | Tag                                         |
+|---------|------------|---------------------------------------------|
+| base    | ~13–18 min | `ghcr.io/manno/fluentd:v1.16-4.10-base-suse`    |
+| filters | ~25–27 min | `ghcr.io/manno/fluentd:v1.16-4.10-filters-suse` |
+| full    | ~95 min    | `ghcr.io/manno/fluentd:v1.16-4.10-full-suse`    |
+
+The Alpine + Sumologic pipeline stays live during the transition; the
+SUSE pipeline runs in parallel:
 
 | Track | Dockerfile | Workflow | Tags pushed |
 |---|---|---|---|
 | Alpine + Sumo (current prod) | `v1.16-4.10/Dockerfile` | `.github/workflows/artifacts.yaml` | `v1.16-4.10-{base,filters,full}` |
-| SUSE BCI (in migration) | `v1.16-4.10/Dockerfile.suse` | `.github/workflows/artifacts-suse.yaml` | `v1.16-4.10-{base,filters,full}-suse` |
+| SUSE BCI (new) | `v1.16-4.10/Dockerfile.suse` | `.github/workflows/artifacts-suse.yaml` | `v1.16-4.10-{base,filters,full}-suse` |
 
-Once the SUSE images pass the smoke test against a real chart deploy and a
-full release cycle, the Alpine track will be removed and `artifacts-suse.yaml`
-becomes the single pipeline.
+Once the SUSE `full` image passes the smoke test against a real chart
+deploy (`ob-team-charts/dev-scripts/smoke-test-rancher-logging.sh`
+with `IMAGE_FLUENTD=ghcr.io/manno/fluentd:v1.16-4.10-full-suse`) and
+a full release cycle, the Alpine track will be removed and
+`artifacts-suse.yaml` becomes the single pipeline.
+
+### Vendored libraries (not in SLE_BCI)
+
+The migration uncovered three libraries that bci-base doesn't ship and
+that the gem set hard-depends on:
+
+- **legacy libGeoIP** — required by `geoip-c` (transitive of
+  `fluent-plugin-geoip`). MaxMind retired the library in 2018; not in
+  any SUSE repo. Built from source (`v1.6.12`) into `/usr/local` in
+  the base stage, registered with `ldconfig`. ~15 s, <2 MB.
+- **libmaxminddb** — needed by `geoip2_c`. The gem vendors its own
+  source and bootstraps with autotools, so we just install
+  `automake`/`autoconf`/`libtool`/`gawk` and let extconf do the work.
+- **tini** — not packaged. Skipping; bash as PID 1 is fine for fluentd
+  which manages its own children via supervisor.
+
+`librdkafka` turned out **not** to be a blocker — the `rdkafka` gem in
+`outputs/Gemfile` (loaded by the `full` stage) compiled cleanly from
+its bundled C sources via cargo-style vendoring. No vendor step needed.
 
 ### Why this took until now
 
 - Current Alpine base brought pre-built gem bundles → ~5–10 min builds.
-- bci/ruby:3.4 means `bundle install` from scratch for 40+ gems with native
-  extensions (rdkafka, oj, snappy, libmaxminddb, …). Expect ~30–45 min
-  build cycles and iteration to get every native gem compiling against
-  the SUSE library set.
-- Largest unknown: `librdkafka-devel` availability in the BCI repos. If it
-  isn't shipped, the `full` stage's `rdkafka` gem will fail and we'll need
-  to vendor librdkafka from source.
+- bci-base means `bundle install` from scratch for ~80 gems with
+  native extensions. End-to-end build is ~90 min on QEMU multi-arch.
+- Five missing build-toolchain pieces had to be discovered one CI
+  iteration at a time: `automake`/`autoconf`/`libtool` (autotools),
+  `gawk` (configure scripts), `xz` (nokogiri's libxml2 tarball), plus
+  vendoring libGeoIP from source.
 
-Strategy `sumo-bump` in `cve-response.md` remains available as a fallback
-while the migration stabilizes.
+Strategy `sumo-bump` in `cve-response.md` remains available as a
+fallback if a CVE lands before the Alpine track is retired.
 
 ## Automation layer
 
