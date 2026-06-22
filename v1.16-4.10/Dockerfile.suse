@@ -47,7 +47,7 @@ RUN set -eux \
         ca-certificates ca-certificates-mozilla \
         libopenssl-3-devel zlib-devel libyaml-devel \
         gcc gcc-c++ make tar gzip git curl patch \
-        automake autoconf libtool \
+        automake autoconf libtool gawk \
  && zypper clean -a \
  && ln -sf $(command -v ruby.ruby${RUBY_PKG_VERSION} 2>/dev/null || command -v ruby) /usr/local/bin/ruby \
  && ln -sf $(command -v gem.ruby${RUBY_PKG_VERSION} 2>/dev/null  || command -v gem)  /usr/local/bin/gem \
