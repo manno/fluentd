@@ -30,6 +30,15 @@ SHELL ["/bin/bash", "-eo", "pipefail", "-c"]
 
 ARG RUBY_PKG_VERSION=3.4
 
+# Match the Alpine image layout: all gems land under /usr/local/bundle and
+# their binstubs (fluent-gem, fluentd, etc.) are on PATH. Without this,
+# zypper-installed ruby on bci-base puts gems under /usr/lib64/ruby/gems/3.4.0
+# and binstubs in a directory PATH doesn't see, so `fluent-gem` is missing
+# and the chart/operator's path assumptions break.
+ENV GEM_HOME=/usr/local/bundle
+ENV BUNDLE_PATH=/usr/local/bundle
+ENV PATH=/usr/local/bundle/bin:$PATH
+
 RUN set -eux \
  && zypper -n refresh \
  && zypper -n install --no-recommends \
@@ -41,6 +50,7 @@ RUN set -eux \
  && zypper clean -a \
  && ln -sf $(command -v ruby.ruby${RUBY_PKG_VERSION} 2>/dev/null || command -v ruby) /usr/local/bin/ruby \
  && ln -sf $(command -v gem.ruby${RUBY_PKG_VERSION} 2>/dev/null  || command -v gem)  /usr/local/bin/gem \
+ && mkdir -p /usr/local/bundle/bin \
  && ruby --version \
  && gem --version
 
