@@ -88,3 +88,15 @@ jobs:
             ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           target: ${{ matrix.image-type }}
+
+      - name: Dispatch to ob-team-charts
+        if: github.event_name == 'push' && matrix.image-type == 'full'
+        env:
+          CHARTS_DISPATCH_TOKEN: ${{ secrets.CHARTS_DISPATCH_TOKEN }}
+        run: |
+          TAG="${{ matrix.fluentd.version }}-${{ matrix.image-type }}-suse"
+          curl -s -X POST \
+            -H "Authorization: Bearer ${CHARTS_DISPATCH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/manno/ob-team-charts/dispatches \
+            -d "{\"event_type\":\"image-updated\",\"client_payload\":{\"component\":\"fluentd\",\"tag\":\"${TAG}\"}}"
