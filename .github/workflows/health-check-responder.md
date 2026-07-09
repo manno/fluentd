@@ -200,3 +200,27 @@ gh issue comment <NUMBER> --repo ${{ github.repository }} --body "<COMMENT_BODY>
 
 That comment is your final action. Do not make further tool calls after posting it.
 
+## Step 5 — Trim old health check issues
+
+After posting the comment, close any open `weekly-health-check` issues beyond
+the 5 most recent. This keeps the issue list manageable.
+
+```bash
+gh issue list --repo ${{ github.repository }} \
+  --label weekly-health-check --state open \
+  --limit 100 --json number,createdAt \
+  --jq 'sort_by(.createdAt) | reverse | .[5:] | .[].number'
+```
+
+For each issue number returned, close it with a brief comment:
+
+```bash
+gh issue comment <OLD_NUMBER> --repo ${{ github.repository }} \
+  --body "Closed automatically — keeping only the 5 most recent health check issues open."
+gh issue close <OLD_NUMBER> --repo ${{ github.repository }}
+```
+
+If no numbers are returned (≤5 open issues), skip this step silently.
+
+That is your final action. Do not make further tool calls after Step 5.
+
