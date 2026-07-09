@@ -171,7 +171,7 @@ ENV BUNDLE_WITHOUT="output,test,development"
 # stages — image size hit is small vs. the iteration speed win).
 RUN set -eux \
  && touch /etc/gemrc \
- && fluent-gem install --file Gemfile.filters \
+ && fluent-gem install --file /Gemfile.filters \
  && chown -R fluent:fluent /usr/local/bundle \
  && rm -rf /usr/local/bundle/cache/* \
  && find /usr/local/bundle -name '*.o' -delete
