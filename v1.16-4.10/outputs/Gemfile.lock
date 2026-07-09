@@ -1,9 +1,9 @@
 GEM
   remote: https://rubygems.org/
   specs:
-    activemodel (7.1.1)
-      activesupport (= 7.1.1)
-    activesupport (7.1.1)
+    activemodel (7.1.3.4)
+      activesupport (= 7.1.3.4)
+    activesupport (7.1.3.4)
       base64
       bigdecimal
       concurrent-ruby (~> 1.0, >= 1.0.2)
@@ -370,6 +370,7 @@ PLATFORMS
   ruby
 
 DEPENDENCIES
+  activesupport (~> 7.1, >= 7.1.3.3)
   fluent-plugin-aliyun-oss (= 0.0.1)
   fluent-plugin-cloudwatch-logs (= 0.15.0)
   fluent-plugin-datadog (= 0.14.4)
