@@ -14,7 +14,7 @@ description: |
 
 on:
   workflow_run:
-    workflows: ["Weekly Health Check"]
+    workflows: ["Weekly Health Check — Fluentd v1.16-4.10"]
     types: [completed]
     branches: [rancher-main]
   workflow_dispatch:
