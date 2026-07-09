@@ -10,10 +10,12 @@ the version consumed by the `rancher-logging` 4.10 chart.
 in `ob-team-charts`). The `v1.17-5.0/` directory is left untouched by our
 automation — it's maintained by upstream but unused by Rancher 4.10.
 
-## Status: SUSE migration — pipeline green, awaiting smoke test
+## Status: SUSE migration complete — running in cluster
 
-All three SUSE images now build and push successfully on branch
-`bci-ruby-migration` (PR [#6](https://github.com/manno/fluentd/pull/6)):
+All three SUSE images build and push from `rancher-main` via `artifacts-suse.yaml`.
+The `full` image has been deployed to a k3d cluster and verified working with the
+rendered `4.10.0-rancher.30-suse1` chart. Dispatch pipeline to `ob-team-charts` is
+wired and operational.
 
 | Stage   | Build time | Tag                                         |
 |---------|------------|---------------------------------------------|
@@ -27,13 +29,38 @@ SUSE pipeline runs in parallel:
 | Track | Dockerfile | Workflow | Tags pushed |
 |---|---|---|---|
 | Alpine + Sumo (current prod) | `v1.16-4.10/Dockerfile` | `.github/workflows/artifacts.yaml` | `v1.16-4.10-{base,filters,full}` |
-| SUSE BCI (new) | `v1.16-4.10/Dockerfile.suse` | `.github/workflows/artifacts-suse.yaml` | `v1.16-4.10-{base,filters,full}-suse` |
+| SUSE BCI (active) | `v1.16-4.10/Dockerfile.suse` | `.github/workflows/artifacts-suse.yaml` | `v1.16-4.10-{base,filters,full}-suse` |
 
-Once the SUSE `full` image passes the smoke test against a real chart
-deploy (`ob-team-charts/dev-scripts/smoke-test-rancher-logging.sh`
-with `IMAGE_FLUENTD=ghcr.io/manno/fluentd:v1.16-4.10-full-suse`) and
-a full release cycle, the Alpine track will be removed and
+Once a full release cycle completes, the Alpine track will be removed and
 `artifacts-suse.yaml` becomes the single pipeline.
+
+### SUSE-specific fixes in Dockerfile.suse
+
+Two issues uncovered during the BCI migration that don't affect Alpine builds:
+
+**1. Binstub naming** — SUSE ruby installs gem executables as `*.ruby3.4`
+(e.g., `fluentd.ruby3.4`), not plain `fluentd`. The upstream entrypoint
+(`exec fluentd ...`) fails because `fluentd` isn't in PATH. Fixed by adding a
+symlink step after `bundle install` in the `full` stage:
+
+```dockerfile
+RUN find /usr/local/bundle/bin -name '*.ruby3.4' | \
+    while read f; do ln -sf "$f" "${f%.ruby3.4}"; done
+WORKDIR /fluentd
+```
+
+The `WORKDIR /fluentd` is also required — without it, bash's `exec fluentd` resolves
+relative to `/`, finds the `/fluentd` directory, and errors with "Is a directory".
+
+**2. Absolute Gemfile path in filters stage** — After adding `WORKDIR /fluentd`,
+the `filters` stage's `fluent-gem install --file Gemfile.filters` broke because
+`Gemfile.filters` is at `/Gemfile.filters` (not `/fluentd/Gemfile.filters`).
+Fixed by using the absolute path: `--file /Gemfile.filters`.
+
+**3. fluentd version bump** — The transitive gem dependencies in `outputs/Gemfile`
+pull in `fluentd 1.19.0` (up from `1.16.x`). This is the version that ends up
+running. Acceptable for the POC; acceptable for production given code-freeze strategy
+(only the gem version changes, not our application code).
 
 ### Vendored libraries (not in SLE_BCI)
 
@@ -74,7 +101,8 @@ fallback if a CVE lands before the Alpine track is retired.
 | Continuous | `renovate.json5` | Gem updates (bundler manager) for v1.16-4.10 — vuln auto-merge, patches auto-merge |
 | Triggered | `.github/workflows/cve-response.md` (agentic) | Long-tail CVE fixes (Ruby bump, sumo bump, gem replace-with-fork) |
 | Weekly | `.github/workflows/weekly-health-check.md` (agentic) | Meta-monitor — bundler-audit + Renovate flow + Ruby/Sumo freshness |
-| Push to rancher-main | `.github/workflows/artifacts.yaml` (upstream, modified) | Build + push base/filters/full images for v1.16-4.10 |
+| Push to rancher-main | `.github/workflows/artifacts.yaml` (upstream, modified) | Build + push Alpine base/filters/full images for v1.16-4.10 |
+| Push to rancher-main | `.github/workflows/artifacts-suse.yaml` | Build + push SUSE base/filters/full images; dispatches `image-updated` to `ob-team-charts` after `full` build |
 | PR | `.github/workflows/ci.yaml` (upstream, unchanged) | Build-only on PR — no push |
 
 ## Why no auto-update-go / auto-update-bci / auto-update-ruby / goreleaser
@@ -129,7 +157,27 @@ Built by `artifacts.yaml` on push to `rancher-main`, pushed to GHCR:
 - **Sync strategy**: None — code/Dockerfiles stay frozen at fork point
 - **Security strategy**: Renovate-driven gem updates for v1.16-4.10/*; agentic handler for the long tail
 
+## Dispatch pipeline
+
+After each successful `full` image build on `rancher-main`, `artifacts-suse.yaml` posts
+a `repository_dispatch` event to `manno/ob-team-charts`:
+
+```bash
+curl -X POST \
+  -H "Authorization: Bearer ${CHARTS_DISPATCH_TOKEN}" \
+  https://api.github.com/repos/manno/ob-team-charts/dispatches \
+  -d '{"event_type":"image-updated","client_payload":{"component":"fluentd","tag":"v1.16-4.10-full-suse"}}'
+```
+
+`ob-team-charts/.github/workflows/image-update.yaml` receives this, resets
+`auto/rancher-logging-suse-updates` from `origin/rancher-logging-4.10-suse1`, updates
+`values.yaml.patch` and `package.yaml`, and opens/updates a PR.
+
+`CHARTS_DISPATCH_TOKEN` is a fine-grained PAT with **Contents: write** on
+`manno/ob-team-charts`, stored as a repo secret.
+
 ## References
 
 - POC state: `docs/logging/fork/STATE.md` in `ob-team-charts`
+- Smoke test: `ob-team-charts/dev-scripts/smoke-test-rancher-logging.sh`
 - Sibling forks: `manno/logging-operator`, `manno/config-reloader`, `manno/fluent-bit`
