@@ -27,7 +27,9 @@
 #     suitable, so we exec entrypoint.sh directly with `exec` and accept that
 #     PID 1 is bash. Acceptable for fluentd which manages its own children.
 
-FROM registry.suse.com/bci/bci-base:latest AS base
+# Base digest is pinned and kept fresh by .github/workflows/auto-update-bci.yaml
+# (daily PR on drift) — do not hand-edit the digest.
+FROM registry.suse.com/bci/bci-base@sha256:f24a0384b05dd50460748b493477e7358cc1fc0c20da1304b623dbe21b543413 AS base
 
 # Strict mode in every RUN so missing packages or failing gem installs
 # break the build immediately instead of producing a hollow image.

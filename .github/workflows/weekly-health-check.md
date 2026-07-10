@@ -4,10 +4,9 @@ description: |
   Monitors build status, Renovate gem-PR flow, open security PRs, gem
   vulnerabilities (bundler-audit), and Ruby + bci-base image freshness.
 
-  Meta-monitor — flags when the automation stalls. Note: fluentd has NO
-  custom auto-update bots (Renovate owns gem updates; Ruby bumps are manual;
-  the bci-base is pinned to :latest so OS fixes ship on rebuild). The
-  bot-liveness check is therefore Renovate-focused.
+  Meta-monitor — flags when the automation stalls. Note: gem updates are owned
+  by Renovate, the bci-base digest by auto-update-bci, and Ruby bumps are manual.
+  The bot-liveness check covers Renovate + auto-update-bci.
 
 on:
   schedule: weekly on monday
@@ -54,16 +53,15 @@ gh run list --repo ${{ github.repository }} --branch rancher-main --limit 30 \
   --json conclusion,status,name,workflowName,createdAt,event,headSha,url
 ```
 
-Workflows to expect: `Artifacts`, `CI`, `Weekly Health Check`. The
-`Artifacts` workflow builds 3 image-types (base/filters/full) for
-v1.16-4.10 — expect 3 matrix rows per run.
+Workflows to expect: `Artifacts`, `CI`, `Weekly Health Check`, `Auto-Update
+SUSE BCI`. The `Artifacts` workflow builds 3 image-types (base/filters/full)
+for v1.16-4.10 — expect 3 matrix rows per run.
 
 If a workflow you expect is missing entirely, treat that as a finding.
 
 ## Step 2 — Renovate flow health
 
-Fluentd has no custom auto-update bots — Renovate is the rebuild pipeline.
-Check that gem-update PRs are flowing.
+Renovate is the gem-update pipeline. Check that gem-update PRs are flowing.
 
 ```bash
 # All Renovate-authored open PRs targeting v1.16-4.10
@@ -151,19 +149,19 @@ echo "ruby pinned_stream=${CURRENT_RUBY} packaged_in_bci=${PACKAGED_RUBY}"
 Status: in sync if the pinned stream is still packaged. **Ruby bumps are NOT
 auto-merged** and are constrained to versions SLE_BCI ships — this is informational.
 
-**bci-base image** (`registry.suse.com/bci/bci-base:latest`):
+**bci-base image** (pinned by digest in `v1.16-4.10/Dockerfile`):
 
 ```bash
-BASE_CREATED=$(docker buildx imagetools inspect registry.suse.com/bci/bci-base:latest --format '{{json .}}' 2>/dev/null \
-  | jq -r '.image.created // "unknown"')
-DOCKERFILE_AGE=$(git log -1 --format=%cr -- v1.16-4.10/Dockerfile)
-echo "bci-base:latest created=${BASE_CREATED} dockerfile_last_changed=${DOCKERFILE_AGE}"
+PINNED=$(grep -E "^FROM registry\.suse\.com/bci/bci-base" v1.16-4.10/Dockerfile | head -1 \
+  | sed -nE 's|.*@(sha256:[a-f0-9]+).*|\1|p')
+LATEST=$(docker buildx imagetools inspect registry.suse.com/bci/bci-base:latest \
+  --format '{{json .}}' 2>/dev/null | jq -r '.manifest.digest')
+echo "bci-base pinned=${PINNED} latest=${LATEST}"
 ```
 
-Status: the base is pinned to `:latest`, so every build pulls the current base and
-its OS patches. The signal here is staleness of OUR last build — if
-`bci-base:latest` is much newer than the last successful `Artifacts` run, trigger a
-rebuild so the fresh base (and its CVE fixes) ships.
+Status: `auto-update-bci.yaml` repins this digest daily and opens a PR on drift. If
+`pinned` != `latest` and there is no open `suse-bci-update` PR, that bot may be
+stalled — check its recent runs. Ruby bumps remain manual.
 
 ## Step 6 — Emit the report
 
@@ -240,7 +238,7 @@ handler will turn it into a GitHub issue.
 | Component | Current | Latest known | Status |
 |---|---|---|---|
 | Ruby (RUBY_PKG_VERSION) | `<pinned stream>` | `<packaged in bci-base>` | ✅ in sync / ⚠️ drift (manual bump) |
-| bci-base:latest | (our build <age>) | (base created <age>) | ✅ / ⚠️ rebuild to pull fresh base |
+| bci-base (pinned) | `<pinned digest>` | `<latest digest>` | ✅ in sync / ⚠️ drift (auto-update-bci PR) |
 
 `v1.16-4.10/Dockerfile` last changed: <relative-time>
 

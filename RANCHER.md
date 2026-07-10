@@ -93,15 +93,13 @@ its bundled C sources via cargo-style vendoring. No vendor step needed.
 | Continuous | `renovate.json5` | Gem updates (bundler manager) for v1.16-4.10 — vuln auto-merge, patches auto-merge |
 | Triggered | `.github/workflows/cve-response.md` (agentic) | Long-tail CVE fixes (Ruby bump, gem replace-with-fork, frozen-specific-install) |
 | Weekly | `.github/workflows/weekly-health-check.md` (agentic) | Meta-monitor — bundler-audit + Renovate flow + Ruby/bci-base freshness |
+| Daily | `.github/workflows/auto-update-bci.yaml` | Repin the `bci-base` digest in `v1.16-4.10/Dockerfile`; one PR per drift |
 | Push to rancher-main | `.github/workflows/artifacts.yaml` | Build + push SUSE base/filters/full images for v1.16-4.10; runs Trivy; dispatches `image-updated` to `ob-team-charts` after `full` build |
 | PR | `.github/workflows/ci.yaml` (upstream, trimmed to v1.16-4.10) | Build-only on PR — no push |
 
-## Why no auto-update-go / auto-update-bci / auto-update-ruby / goreleaser
+## Why no auto-update-go / auto-update-ruby / goreleaser
 
 - **No Go**: Ruby project.
-- **No auto-update-bci** *(yet)*: now unblocked — the canonical Dockerfile is the
-  bci-base build and the Alpine track is retired. Recommended next step, same shape
-  as the other forks' `auto-update-bci.yaml`.
 - **No auto-update-ruby**: Ruby is installed from SLE_BCI via the
   `RUBY_PKG_VERSION` ARG; bumps carry ABI risk against compiled native gems and are
   constrained to versions SLE_BCI ships. Manual bump only.
