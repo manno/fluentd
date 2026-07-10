@@ -1,13 +1,20 @@
 name: Artifacts
 
+# Single build+push pipeline for the SUSE (bci-base) image of v1.16-4.10.
+# Builds base/filters/full from v1.16-4.10/Dockerfile and pushes
+# :v1.16-4.10-{base,filters,full}-suse tags. The -suse suffix documents the
+# base-image lineage and is what the rancher-logging chart consumes; it is
+# retained now that the Alpine track is retired. PR build-only is handled by
+# ci.yaml. After the `full` build, dispatches `image-updated` to ob-team-charts.
+
 on:
   push:
     branches:
-      - main
       - rancher-main   # Our fork's main branch
   workflow_dispatch:
 
 permissions:
+  contents: read
   packages: write
   security-events: write
 
@@ -16,13 +23,10 @@ jobs:
     name: Container images
     runs-on: ubuntu-latest
     strategy:
-      # Some older image builds may fail
       fail-fast: false
       matrix:
         fluentd:
           - version: v1.16-4.10
-            alias:   v1.16-4.11
-          - version: v1.17-5.0
         image-type:
           - base
           - filters
@@ -41,10 +45,9 @@ jobs:
           flavor: |
             latest = false
           tags: |
-            type=raw,value=${{ matrix.fluentd.version }}-${{ matrix.image-type }}
-            type=raw,value=${{ matrix.fluentd.version }}-${{ matrix.image-type }}-build.${{ github.run_number }}
-            type=raw,value=${{ !!matrix.fluentd.alias && matrix.fluentd.alias || 'alias' }}-${{ matrix.image-type }},enable=${{ !!matrix.fluentd.alias }}
-            type=raw,value=${{ !!matrix.fluentd.alias && matrix.fluentd.alias || 'alias' }}-${{ matrix.image-type }}-build.${{ github.run_number }},enable=${{ !!matrix.fluentd.alias }}
+            type=raw,value=${{ matrix.fluentd.version }}-${{ matrix.image-type }}-suse
+            type=raw,value=${{ matrix.fluentd.version }}-${{ matrix.image-type }}-suse-build.${{ github.run_number }}
+            type=sha,prefix=${{ matrix.fluentd.version }}-${{ matrix.image-type }}-suse-,format=short
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -67,8 +70,8 @@ jobs:
         with:
           context: ${{ matrix.fluentd.version }}
           platforms: linux/amd64,linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=suse-${{ matrix.image-type }}
+          cache-to: type=gha,mode=max,scope=suse-${{ matrix.image-type }}
           push: ${{ github.event_name == 'push' }}
           tags: |
             ${{ steps.meta.outputs.tags }}
@@ -91,3 +94,15 @@ jobs:
         with:
           sarif_file: "trivy-results.sarif"
         if: github.event_name == 'push'
+
+      - name: Dispatch to ob-team-charts
+        if: github.event_name == 'push' && matrix.image-type == 'full'
+        env:
+          CHARTS_DISPATCH_TOKEN: ${{ secrets.CHARTS_DISPATCH_TOKEN }}
+        run: |
+          TAG="${{ matrix.fluentd.version }}-${{ matrix.image-type }}-suse"
+          curl -s -X POST \
+            -H "Authorization: Bearer ${CHARTS_DISPATCH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/manno/ob-team-charts/dispatches \
+            -d "{\"event_type\":\"image-updated\",\"client_payload\":{\"component\":\"fluentd\",\"tag\":\"${TAG}\"}}"

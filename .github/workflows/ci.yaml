@@ -12,8 +12,6 @@ jobs:
       matrix:
         fluentd:
           - version: v1.16-4.10
-            alias:   v1.16-4.11
-          - version: v1.17-5.0
         image-type:
           - base
           - filters
@@ -36,8 +34,6 @@ jobs:
           tags: |
             type=raw,value=${{ matrix.fluentd.version }}-${{ matrix.image-type }}
             type=raw,value=${{ matrix.fluentd.version }}-${{ matrix.image-type }}-build.${{ github.run_number }}
-            type=raw,value=${{ !!matrix.fluentd.alias && matrix.fluentd.alias || 'alias' }}-${{ matrix.image-type }},enable=${{ !!matrix.fluentd.alias }}
-            type=raw,value=${{ !!matrix.fluentd.alias && matrix.fluentd.alias || 'alias' }}-${{ matrix.image-type }}-build.${{ github.run_number }},enable=${{ !!matrix.fluentd.alias }}
           labels: |
             org.opencontainers.image.description=Custom-built Fluentd image for the Logging operator
             org.opencontainers.image.title=Fluentd docker image

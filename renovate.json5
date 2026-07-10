@@ -24,18 +24,11 @@
 
   // Override upstream's intentional disable of v1.16-4.10/* — we WANT Renovate
   // to manage gems for the version our chart ships.
-  // v1.17-5.0/* stays disabled — it's not consumed by rancher-logging 4.10.
   packageRules: [
     // Re-enable v1.16-4.10/* for the bundler manager
     {
       matchFileNames: ["v1.16-4.10/**/Gemfile", "v1.16-4.10/**/Gemfile.lock"],
       enabled: true,
-    },
-
-    // Keep v1.17-5.0/* disabled (not our concern)
-    {
-      matchFileNames: ["v1.17-5.0/**"],
-      enabled: false,
     },
 
     // Auto-merge patch updates to gems
