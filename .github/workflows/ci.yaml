@@ -57,7 +57,7 @@ jobs:
         with:
           context: ${{ matrix.fluentd.version }}
           cache-from: type=gha,scope=${{ matrix.image-type }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.image-type }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image-type }},ignore-error=true
           push: false
           tags: |
             ${{ steps.meta.outputs.tags }}
