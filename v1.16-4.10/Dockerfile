@@ -29,7 +29,7 @@
 
 # Base digest is pinned and kept fresh by .github/workflows/auto-update-bci.yaml
 # (daily PR on drift) — do not hand-edit the digest.
-FROM registry.suse.com/bci/bci-base@sha256:f24a0384b05dd50460748b493477e7358cc1fc0c20da1304b623dbe21b543413 AS base
+FROM registry.suse.com/bci/bci-base@sha256:22592302cdeee8b700f97cabbbee880dd99966d30874f70b7a7dbe57ff8c6bdd AS base
 
 # Strict mode in every RUN so missing packages or failing gem installs
 # break the build immediately instead of producing a hollow image.
